@@ -1,8 +1,23 @@
 # TonUINO
 Die DIY Musikbox (nicht nur) für Kinder
 
+# Installation
+
+## Notwendige Libraries (Installation über Library Manager)
+
+* DFPlayer Mini Mp3 by Makuna
+* JC_Button
+* MFRC522
 
 # Change Log
+
+
+## Next
+
+- .ino umbenannt, damit File direkt im Clone geöffnet werden kann
+- Warnungen beim Compilieren behoben
+
+## Fork
 
 ## Version 2.1 (xx.xx.xxxx) noch WIP
 - Partymodus hat nun eine Queue -> jedes Lied kommt nur genau 1x vorkommt

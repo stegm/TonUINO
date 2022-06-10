@@ -1,3 +1,8 @@
+#include <Arduino.h>
+
+#include "Types.hpp"
+#include "Settings.hpp"
+
 #include <DFMiniMp3.h>
 #include <EEPROM.h>
 #include <JC_Button.h>
@@ -5,6 +10,7 @@
 #include <SPI.h>
 #include <SoftwareSerial.h>
 #include <avr/sleep.h>
+#include <stdbool.h>
 
 /*
    _____         _____ _____ _____ _____
@@ -30,43 +36,22 @@ uint16_t firstTrack;
 uint8_t queue[255];
 uint8_t volume;
 
-struct folderSettings {
-  uint8_t folder;
-  uint8_t mode;
-  uint8_t special;
-  uint8_t special2;
-};
 
 // this object stores nfc tag data
 struct nfcTagObject {
   uint32_t cookie;
   uint8_t version;
-  folderSettings nfcFolderSettings;
+  FolderSettings nfcFolderSettings;
   //  uint8_t folder;
   //  uint8_t mode;
   //  uint8_t special;
   //  uint8_t special2;
 };
 
-// admin settings stored in eeprom
-struct adminSettings {
-  uint32_t cookie;
-  byte version;
-  uint8_t maxVolume;
-  uint8_t minVolume;
-  uint8_t initVolume;
-  uint8_t eq;
-  bool locked;
-  long standbyTimer;
-  bool invertVolumeButtons;
-  folderSettings shortCuts[4];
-  uint8_t adminMenuLocked;
-  uint8_t adminMenuPin[4];
-};
 
-adminSettings mySettings;
+AdminSettings mySettings;
 nfcTagObject myCard;
-folderSettings *myFolder;
+FolderSettings *myFolder;
 unsigned long sleepAtMillis = 0;
 static uint16_t _lastTrackFinished;
 
@@ -78,6 +63,14 @@ bool checkTwo ( uint8_t a[], uint8_t b[] );
 void writeCard(nfcTagObject nfcTag);
 void dump_byte_array(byte * buffer, byte bufferSize);
 void adminMenu(bool fromCard = false);
+void setstandbyTimer();
+void playFolder();
+void playShortCut(uint8_t shortCut);
+bool readCard(nfcTagObject * nfcTag);
+void setupCard();
+bool askCode(uint8_t *code);
+void resetCard();
+bool setupFolder(FolderSettings * theFolder);
 bool knownCard = false;
 
 // implement a notification class,
@@ -707,8 +700,8 @@ bool isPlaying() {
 }
 
 void waitForTrackToFinish() {
-  long currentTime = millis();
-#define TIMEOUT 1000
+  unsigned long currentTime = millis();
+#define TIMEOUT 1000u
   do {
     mp3.loop();
   } while (!isPlaying() && millis() < currentTime + TIMEOUT);
@@ -762,8 +755,7 @@ void setup() {
   // NFC Leser initialisieren
   SPI.begin();        // Init SPI bus
   mfrc522.PCD_Init(); // Init MFRC522
-  mfrc522
-  .PCD_DumpVersionToSerial(); // Show details of PCD - MFRC522 Card Reader
+  mfrc522.PCD_DumpVersionToSerial(); // Show details of PCD - MFRC522 Card Reader
   for (byte i = 0; i < 6; i++) {
     key.keyByte[i] = 0xFF;
   }
@@ -783,7 +775,7 @@ void setup() {
   if (digitalRead(buttonPause) == LOW && digitalRead(buttonUp) == LOW &&
       digitalRead(buttonDown) == LOW) {
     Serial.println(F("Reset -> EEPROM wird gelöscht"));
-    for (int i = 0; i < EEPROM.length(); i++) {
+    for (uint16_t i = 0; i < EEPROM.length(); i++) {
       EEPROM.update(i, 0);
     }
     loadSettingsFromFlash();
@@ -974,7 +966,8 @@ void loop() {
       if (activeModifier != NULL)
         if (activeModifier->handlePause() == true)
           return;
-      if (ignorePauseButton == false)
+      if (!ignorePauseButton)
+      {
         if (isPlaying()) {
           mp3.pause();
           setstandbyTimer();
@@ -983,6 +976,7 @@ void loop() {
           mp3.start();
           disablestandbyTimer();
         }
+      }
       ignorePauseButton = false;
     } else if (pauseButton.pressedFor(LONG_PRESS) &&
                ignorePauseButton == false) {
@@ -1025,14 +1019,16 @@ void loop() {
       ignoreUpButton = true;
 #endif
     } else if (upButton.wasReleased()) {
-      if (!ignoreUpButton)
-        if (!mySettings.invertVolumeButtons) {
-          nextButton();
+        if (!ignoreUpButton)
+        {
+          if (!mySettings.invertVolumeButtons) {
+            nextButton();
+          }
+          else {
+            volumeUpButton();
+          }
         }
-        else {
-          volumeUpButton();
-        }
-      ignoreUpButton = false;
+        ignoreUpButton = false;
     }
 
     if (downButton.pressedFor(LONG_PRESS)) {
@@ -1297,7 +1293,7 @@ void adminMenu(bool fromCard) {
   }
   else if (subMenu == 11) {
     Serial.println(F("Reset -> EEPROM wird gelöscht"));
-    for (int i = 0; i < EEPROM.length(); i++) {
+    for (uint16_t i = 0; i < EEPROM.length(); i++) {
       EEPROM.update(i, 0);
     }
     resetSettings();
@@ -1467,7 +1463,7 @@ void resetCard() {
   setupCard();
 }
 
-bool setupFolder(folderSettings * theFolder) {
+bool setupFolder(FolderSettings * theFolder) {
   // Ordner abfragen
   theFolder->folder = voiceMenu(99, 301, 0, true, 0, 0, true);
   if (theFolder->folder == 0) return false;
@@ -1707,8 +1703,6 @@ void writeCard(nfcTagObject nfcTag) {
                      nfcTag.nfcFolderSettings.special2,
                      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
                     };
-
-  byte size = sizeof(buffer);
 
   mifareType = mfrc522.PICC_GetType(mfrc522.uid.sak);
 

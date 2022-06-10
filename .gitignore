@@ -29,3 +29,5 @@ Temporary Items
 
 # TonUINO
 /tools/*.pyc
+
+.pio/**

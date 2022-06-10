@@ -1,5 +1,8 @@
 #pragma once
 
+#include <Arduino.h>
+#include <stdint.h>
+
 #include "Types.hpp"
 
 // admin settings stored in eeprom
@@ -18,6 +21,9 @@ typedef struct {
   uint8_t adminMenuPin[4];
 } AdminSettings;
 
-class Settings {
+extern AdminSettings mySettings;
 
-};
+void writeSettingsToFlash(FolderSettings * myFolder);
+void resetSettings(uint32_t cardCookie, FolderSettings * myFolder);
+void migrateSettings(int oldVersion, FolderSettings * myFolder);
+void loadSettingsFromFlash(uint32_t cardCookie, FolderSettings * myFolder);

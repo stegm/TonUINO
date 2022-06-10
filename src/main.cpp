@@ -36,7 +36,6 @@ uint16_t firstTrack;
 uint8_t queue[255];
 uint8_t volume;
 
-
 // this object stores nfc tag data
 struct nfcTagObject {
   uint32_t cookie;
@@ -48,8 +47,6 @@ struct nfcTagObject {
   //  uint8_t special2;
 };
 
-
-AdminSettings mySettings;
 nfcTagObject myCard;
 FolderSettings *myFolder;
 unsigned long sleepAtMillis = 0;
@@ -130,91 +127,7 @@ void shuffleQueue() {
   */
 }
 
-void writeSettingsToFlash() {
-  Serial.println(F("=== writeSettingsToFlash()"));
-  int address = sizeof(myFolder->folder) * 100;
-  EEPROM.put(address, mySettings);
-}
 
-void resetSettings() {
-  Serial.println(F("=== resetSettings()"));
-  mySettings.cookie = cardCookie;
-  mySettings.version = 2;
-  mySettings.maxVolume = 25;
-  mySettings.minVolume = 5;
-  mySettings.initVolume = 15;
-  mySettings.eq = 1;
-  mySettings.locked = false;
-  mySettings.standbyTimer = 0;
-  mySettings.invertVolumeButtons = true;
-  mySettings.shortCuts[0].folder = 0;
-  mySettings.shortCuts[1].folder = 0;
-  mySettings.shortCuts[2].folder = 0;
-  mySettings.shortCuts[3].folder = 0;
-  mySettings.adminMenuLocked = 0;
-  mySettings.adminMenuPin[0] = 1;
-  mySettings.adminMenuPin[1] = 1;
-  mySettings.adminMenuPin[2] = 1;
-  mySettings.adminMenuPin[3] = 1;
-
-  writeSettingsToFlash();
-}
-
-void migrateSettings(int oldVersion) {
-  if (oldVersion == 1) {
-    Serial.println(F("=== resetSettings()"));
-    Serial.println(F("1 -> 2"));
-    mySettings.version = 2;
-    mySettings.adminMenuLocked = 0;
-    mySettings.adminMenuPin[0] = 1;
-    mySettings.adminMenuPin[1] = 1;
-    mySettings.adminMenuPin[2] = 1;
-    mySettings.adminMenuPin[3] = 1;
-    writeSettingsToFlash();
-  }
-}
-
-void loadSettingsFromFlash() {
-  Serial.println(F("=== loadSettingsFromFlash()"));
-  int address = sizeof(myFolder->folder) * 100;
-  EEPROM.get(address, mySettings);
-  if (mySettings.cookie != cardCookie)
-    resetSettings();
-  migrateSettings(mySettings.version);
-
-  Serial.print(F("Version: "));
-  Serial.println(mySettings.version);
-
-  Serial.print(F("Maximal Volume: "));
-  Serial.println(mySettings.maxVolume);
-
-  Serial.print(F("Minimal Volume: "));
-  Serial.println(mySettings.minVolume);
-
-  Serial.print(F("Initial Volume: "));
-  Serial.println(mySettings.initVolume);
-
-  Serial.print(F("EQ: "));
-  Serial.println(mySettings.eq);
-
-  Serial.print(F("Locked: "));
-  Serial.println(mySettings.locked);
-
-  Serial.print(F("Sleep Timer: "));
-  Serial.println(mySettings.standbyTimer);
-
-  Serial.print(F("Inverted Volume Buttons: "));
-  Serial.println(mySettings.invertVolumeButtons);
-
-  Serial.print(F("Admin Menu locked: "));
-  Serial.println(mySettings.adminMenuLocked);
-
-  Serial.print(F("Admin Menu Pin: "));
-  Serial.print(mySettings.adminMenuPin[0]);
-  Serial.print(mySettings.adminMenuPin[1]);
-  Serial.print(mySettings.adminMenuPin[2]);
-  Serial.println(mySettings.adminMenuPin[3]);
-}
 
 class Modifier {
   public:
@@ -737,7 +650,7 @@ void setup() {
   pinMode(busyPin, INPUT);
 
   // load Settings from EEPROM
-  loadSettingsFromFlash();
+  loadSettingsFromFlash(cardCookie, myFolder);
 
   // activate standby timer
   setstandbyTimer();
@@ -778,7 +691,7 @@ void setup() {
     for (uint16_t i = 0; i < EEPROM.length(); i++) {
       EEPROM.update(i, 0);
     }
-    loadSettingsFromFlash();
+    loadSettingsFromFlash(cardCookie, myFolder);
   }
 
 
@@ -1296,7 +1209,7 @@ void adminMenu(bool fromCard) {
     for (uint16_t i = 0; i < EEPROM.length(); i++) {
       EEPROM.update(i, 0);
     }
-    resetSettings();
+    resetSettings(cardCookie, myFolder);
     mp3.playMp3FolderTrack(999);
   }
   // lock admin menu
@@ -1321,7 +1234,7 @@ void adminMenu(bool fromCard) {
     }
 
   }
-  writeSettingsToFlash();
+  writeSettingsToFlash(myFolder);
   setstandbyTimer();
 }
 

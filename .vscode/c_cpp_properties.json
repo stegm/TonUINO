@@ -1,15 +1,61 @@
+//
+// !!! WARNING !!! AUTO-GENERATED FILE!
+// PLEASE DO NOT MODIFY IT AND USE "platformio.ini":
+// https://docs.platformio.org/page/projectconf/section_env_build.html#build-flags
+//
 {
     "configurations": [
         {
-            "name": "Linux",
+            "name": "PlatformIO",
             "includePath": [
-                "${workspaceFolder}/**"
+                "/workspaces/TonUINO/include",
+                "/workspaces/TonUINO/src",
+                "/home/vscode/.platformio/packages/framework-arduino-avr/libraries/SoftwareSerial/src",
+                "/home/vscode/.platformio/packages/framework-arduino-avr/libraries/EEPROM/src",
+                "/workspaces/TonUINO/.pio/libdeps/nanoatmega328/DFPlayer Mini Mp3 by Makuna/src",
+                "/workspaces/TonUINO/.pio/libdeps/nanoatmega328/JC_Button/src",
+                "/workspaces/TonUINO/.pio/libdeps/nanoatmega328/MFRC522/src",
+                "/home/vscode/.platformio/packages/framework-arduino-avr/libraries/SPI/src",
+                "/home/vscode/.platformio/packages/framework-arduino-avr/cores/arduino",
+                "/home/vscode/.platformio/packages/framework-arduino-avr/variants/eightanaloginputs",
+                "/home/vscode/.platformio/packages/framework-arduino-avr/libraries/HID/src",
+                "/home/vscode/.platformio/packages/framework-arduino-avr/libraries/Wire/src",
+                ""
             ],
-            "defines": [],
-            "compilerPath": "/usr/bin/clang",
-            "cStandard": "c17",
-            "cppStandard": "c++14",
-            "intelliSenseMode": "linux-clang-x64"
+            "browse": {
+                "limitSymbolsToIncludedHeaders": true,
+                "path": [
+                    "/workspaces/TonUINO/include",
+                    "/workspaces/TonUINO/src",
+                    "/home/vscode/.platformio/packages/framework-arduino-avr/libraries/SoftwareSerial/src",
+                    "/home/vscode/.platformio/packages/framework-arduino-avr/libraries/EEPROM/src",
+                    "/workspaces/TonUINO/.pio/libdeps/nanoatmega328/DFPlayer Mini Mp3 by Makuna/src",
+                    "/workspaces/TonUINO/.pio/libdeps/nanoatmega328/JC_Button/src",
+                    "/workspaces/TonUINO/.pio/libdeps/nanoatmega328/MFRC522/src",
+                    "/home/vscode/.platformio/packages/framework-arduino-avr/libraries/SPI/src",
+                    "/home/vscode/.platformio/packages/framework-arduino-avr/cores/arduino",
+                    "/home/vscode/.platformio/packages/framework-arduino-avr/variants/eightanaloginputs",
+                    "/home/vscode/.platformio/packages/framework-arduino-avr/libraries/HID/src",
+                    "/home/vscode/.platformio/packages/framework-arduino-avr/libraries/Wire/src",
+                    ""
+                ]
+            },
+            "defines": [
+                "PLATFORMIO=60002",
+                "ARDUINO_AVR_NANO",
+                "F_CPU=16000000L",
+                "ARDUINO_ARCH_AVR",
+                "ARDUINO=10808",
+                "__AVR_ATmega328P__",
+                ""
+            ],
+            "cStandard": "c11",
+            "cppStandard": "c++11",
+            "compilerPath": "/home/vscode/.platformio/packages/toolchain-atmelavr/bin/avr-gcc",
+            "compilerArgs": [
+                "-mmcu=atmega328p",
+                ""
+            ]
         }
     ],
     "version": 4

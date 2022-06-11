@@ -2,6 +2,7 @@
 
 #include "Types.hpp"
 #include "Settings.hpp"
+#include "Player.hpp"
 
 #include <DFMiniMp3.h>
 #include <EEPROM.h>
@@ -30,6 +31,8 @@ static const uint32_t cardCookie = 322417479;
 
 // DFPlayer Mini
 SoftwareSerial mySoftwareSerial(2, 3); // RX, TX
+Player mp3(mySoftwareSerial);
+
 uint16_t numTracksInFolder;
 uint16_t currentTrack;
 uint16_t firstTrack;
@@ -56,7 +59,6 @@ static void nextTrack(uint16_t track);
 uint8_t voiceMenu(int numberOfOptions, int startMessage, int messageOffset,
                   bool preview = false, int previewFromFolder = 0, int defaultValue = 0, bool exitWithLongPress = false);
 bool isPlaying();
-bool checkTwo ( uint8_t a[], uint8_t b[] );
 void writeCard(nfcTagObject nfcTag);
 void dump_byte_array(byte * buffer, byte bufferSize);
 void adminMenu(bool fromCard = false);
@@ -70,41 +72,6 @@ void resetCard();
 bool setupFolder(FolderSettings * theFolder);
 bool knownCard = false;
 
-// implement a notification class,
-// its member methods will get called
-//
-class Mp3Notify {
-  public:
-    static void OnError(uint16_t errorCode) {
-      // see DfMp3_Error for code meaning
-      Serial.println();
-      Serial.print("Com Error ");
-      Serial.println(errorCode);
-    }
-    static void PrintlnSourceAction(DfMp3_PlaySources source, const char* action) {
-      if (source & DfMp3_PlaySources_Sd) Serial.print("SD Karte ");
-      if (source & DfMp3_PlaySources_Usb) Serial.print("USB ");
-      if (source & DfMp3_PlaySources_Flash) Serial.print("Flash ");
-      Serial.println(action);
-    }
-    static void OnPlayFinished(DfMp3_PlaySources source, uint16_t track) {
-      //      Serial.print("Track beendet");
-      //      Serial.println(track);
-      //      delay(100);
-      nextTrack(track);
-    }
-    static void OnPlaySourceOnline(DfMp3_PlaySources source) {
-      PrintlnSourceAction(source, "online");
-    }
-    static void OnPlaySourceInserted(DfMp3_PlaySources source) {
-      PrintlnSourceAction(source, "bereit");
-    }
-    static void OnPlaySourceRemoved(DfMp3_PlaySources source) {
-      PrintlnSourceAction(source, "entfernt");
-    }
-};
-
-static DFMiniMp3<SoftwareSerial, Mp3Notify> mp3(mySoftwareSerial);
 
 void shuffleQueue() {
   // Queue für die Zufallswiedergabe erstellen
@@ -126,8 +93,6 @@ void shuffleQueue() {
       Serial.println(queue[x]);
   */
 }
-
-
 
 class Modifier {
   public:
@@ -656,6 +621,7 @@ void setup() {
   setstandbyTimer();
 
   // DFPlayer Mini initialisieren
+  Mp3Notify::RegisterOnPlayFinished(nextTrack);
   mp3.begin();
   // Zwei Sekunden warten bis der DFPlayer Mini initialisiert ist
   delay(2000);
@@ -870,7 +836,6 @@ void loop() {
       do {
         readButtons();
       } while (pauseButton.isPressed() || upButton.isPressed() || downButton.isPressed());
-      readButtons();
       adminMenu();
       break;
     }
@@ -891,8 +856,7 @@ void loop() {
         }
       }
       ignorePauseButton = false;
-    } else if (pauseButton.pressedFor(LONG_PRESS) &&
-               ignorePauseButton == false) {
+    } else if (pauseButton.pressedFor(LONG_PRESS) && !ignorePauseButton) {
       if (activeModifier != NULL)
         if (activeModifier->handlePause() == true)
           return;
@@ -1038,7 +1002,7 @@ void adminMenu(bool fromCard) {
       uint8_t pin[4];
       mp3.playMp3FolderTrack(991);
       if (askCode(pin) == true) {
-        if (checkTwo(pin, mySettings.adminMenuPin) == false) {
+        if (memcmp(pin, mySettings.adminMenuPin, 4) == 0) {
           return;
         }
       } else {
@@ -1691,8 +1655,6 @@ void writeCard(nfcTagObject nfcTag) {
   delay(2000);
 }
 
-
-
 /**
   Helper routine to dump a byte array as hex values to Serial.
 */
@@ -1703,12 +1665,3 @@ void dump_byte_array(byte * buffer, byte bufferSize) {
   }
 }
 
-///////////////////////////////////////// Check Bytes   ///////////////////////////////////
-bool checkTwo ( uint8_t a[], uint8_t b[] ) {
-  for ( uint8_t k = 0; k < 4; k++ ) {   // Loop 4 times
-    if ( a[k] != b[k] ) {     // IF a != b then false, because: one fails, all fail
-      return false;
-    }
-  }
-  return true;
-}

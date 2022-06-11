@@ -3,14 +3,13 @@
 #include "Types.hpp"
 #include "Settings.hpp"
 #include "Player.hpp"
+#include "StandbyTimer.hpp"
 
-#include <DFMiniMp3.h>
 #include <EEPROM.h>
 #include <JC_Button.h>
 #include <MFRC522.h>
 #include <SPI.h>
 #include <SoftwareSerial.h>
-#include <avr/sleep.h>
 #include <stdbool.h>
 
 /*
@@ -52,8 +51,50 @@ struct nfcTagObject {
 
 nfcTagObject myCard;
 FolderSettings *myFolder;
-unsigned long sleepAtMillis = 0;
 static uint16_t _lastTrackFinished;
+
+// MFRC522
+#define RST_PIN 9                 // Configurable, see typical pin layout above
+#define SS_PIN 10                 // Configurable, see typical pin layout above
+MFRC522 mfrc522(SS_PIN, RST_PIN); // Create MFRC522
+MFRC522::MIFARE_Key key;
+bool successRead;
+byte sector = 1;
+byte blockAddr = 4;
+byte trailerBlock = 7;
+MFRC522::StatusCode status;
+
+#define buttonPause A0
+#define buttonUp A1
+#define buttonDown A2
+#define busyPin 4
+#define shutdownPin 7
+#define openAnalogPin A7
+
+#ifdef FIVEBUTTONS
+#define buttonFourPin A3
+#define buttonFivePin A4
+#endif
+
+#define LONG_PRESS 1000
+
+Button pauseButton(buttonPause);
+Button upButton(buttonUp);
+Button downButton(buttonDown);
+#ifdef FIVEBUTTONS
+Button buttonFour(buttonFourPin);
+Button buttonFive(buttonFivePin);
+#endif
+bool ignorePauseButton = false;
+bool ignoreUpButton = false;
+bool ignoreDownButton = false;
+#ifdef FIVEBUTTONS
+bool ignoreButtonFour = false;
+bool ignoreButtonFive = false;
+#endif
+
+StandbyTimer standby(mfrc522, mp3, shutdownPin);
+
 
 static void nextTrack(uint16_t track);
 uint8_t voiceMenu(int numberOfOptions, int startMessage, int messageOffset,
@@ -62,7 +103,6 @@ bool isPlaying();
 void writeCard(nfcTagObject nfcTag);
 void dump_byte_array(byte * buffer, byte bufferSize);
 void adminMenu(bool fromCard = false);
-void setstandbyTimer();
 void playFolder();
 void playShortCut(uint8_t shortCut);
 bool readCard(nfcTagObject * nfcTag);
@@ -140,7 +180,7 @@ class SleepTimer: public Modifier {
       if (this->sleepAtMillis != 0 && millis() > this->sleepAtMillis) {
         Serial.println(F("=== SleepTimer::loop() -> SLEEP!"));
         mp3.pause();
-        setstandbyTimer();
+        standby.start(mySettings.standbyTimer * 60 * 1000);
         activeModifier = NULL;
         delete this;
       }
@@ -402,7 +442,7 @@ static void nextTrack(uint16_t track) {
 
   if (myFolder->mode == 1 || myFolder->mode == 7) {
     Serial.println(F("Hörspielmodus ist aktiv -> keinen neuen Track spielen"));
-    setstandbyTimer();
+    standby.start(mySettings.standbyTimer * 60 * 1000);
     //    mp3.sleep(); // Je nach Modul kommt es nicht mehr zurück aus dem Sleep!
   }
   if (myFolder->mode == 2 || myFolder->mode == 8) {
@@ -413,7 +453,7 @@ static void nextTrack(uint16_t track) {
       Serial.print(currentTrack);
     } else
       //      mp3.sleep();   // Je nach Modul kommt es nicht mehr zurück aus dem Sleep!
-      setstandbyTimer();
+      standby.start(mySettings.standbyTimer * 60 * 1000);
     { }
   }
   if (myFolder->mode == 3 || myFolder->mode == 9) {
@@ -434,7 +474,7 @@ static void nextTrack(uint16_t track) {
   if (myFolder->mode == 4) {
     Serial.println(F("Einzel Modus aktiv -> Strom sparen"));
     //    mp3.sleep();      // Je nach Modul kommt es nicht mehr zurück aus dem Sleep!
-    setstandbyTimer();
+    standby.start(mySettings.standbyTimer * 60 * 1000);
   }
   if (myFolder->mode == 5) {
     if (currentTrack != numTracksInFolder) {
@@ -449,7 +489,7 @@ static void nextTrack(uint16_t track) {
       //      mp3.sleep();  // Je nach Modul kommt es nicht mehr zurück aus dem Sleep!
       // Fortschritt zurück setzen
       EEPROM.update(myFolder->folder, 1);
-      setstandbyTimer();
+      standby.start(mySettings.standbyTimer * 60 * 1000);
     }
   }
   delay(500);
@@ -498,81 +538,6 @@ static void previousTrack() {
   delay(1000);
 }
 
-// MFRC522
-#define RST_PIN 9                 // Configurable, see typical pin layout above
-#define SS_PIN 10                 // Configurable, see typical pin layout above
-MFRC522 mfrc522(SS_PIN, RST_PIN); // Create MFRC522
-MFRC522::MIFARE_Key key;
-bool successRead;
-byte sector = 1;
-byte blockAddr = 4;
-byte trailerBlock = 7;
-MFRC522::StatusCode status;
-
-#define buttonPause A0
-#define buttonUp A1
-#define buttonDown A2
-#define busyPin 4
-#define shutdownPin 7
-#define openAnalogPin A7
-
-#ifdef FIVEBUTTONS
-#define buttonFourPin A3
-#define buttonFivePin A4
-#endif
-
-#define LONG_PRESS 1000
-
-Button pauseButton(buttonPause);
-Button upButton(buttonUp);
-Button downButton(buttonDown);
-#ifdef FIVEBUTTONS
-Button buttonFour(buttonFourPin);
-Button buttonFive(buttonFivePin);
-#endif
-bool ignorePauseButton = false;
-bool ignoreUpButton = false;
-bool ignoreDownButton = false;
-#ifdef FIVEBUTTONS
-bool ignoreButtonFour = false;
-bool ignoreButtonFive = false;
-#endif
-
-/// Funktionen für den Standby Timer (z.B. über Pololu-Switch oder Mosfet)
-
-void setstandbyTimer() {
-  Serial.println(F("=== setstandbyTimer()"));
-  if (mySettings.standbyTimer != 0)
-    sleepAtMillis = millis() + (mySettings.standbyTimer * 60 * 1000);
-  else
-    sleepAtMillis = 0;
-  Serial.println(sleepAtMillis);
-}
-
-void disablestandbyTimer() {
-  Serial.println(F("=== disablestandby()"));
-  sleepAtMillis = 0;
-}
-
-void checkStandbyAtMillis() {
-  if (sleepAtMillis != 0 && millis() > sleepAtMillis) {
-    Serial.println(F("=== power off!"));
-    // enter sleep state
-    digitalWrite(shutdownPin, HIGH);
-    delay(500);
-
-    // http://discourse.voss.earth/t/intenso-s10000-powerbank-automatische-abschaltung-software-only/805
-    // powerdown to 27mA (powerbank switches off after 30-60s)
-    mfrc522.PCD_AntennaOff();
-    mfrc522.PCD_SoftPowerDown();
-    mp3.sleep();
-
-    set_sleep_mode(SLEEP_MODE_PWR_DOWN);
-    cli();  // Disable interrupts
-    sleep_mode();
-  }
-}
-
 bool isPlaying() {
   return !digitalRead(busyPin);
 }
@@ -618,7 +583,7 @@ void setup() {
   loadSettingsFromFlash(cardCookie, myFolder);
 
   // activate standby timer
-  setstandbyTimer();
+  standby.start(mySettings.standbyTimer * 60 * 1000);
 
   // DFPlayer Mini initialisieren
   Mp3Notify::RegisterOnPlayFinished(nextTrack);
@@ -721,7 +686,7 @@ void previousButton() {
 
 void playFolder() {
   Serial.println(F("== playFolder()")) ;
-  disablestandbyTimer();
+  standby.stop();
   knownCard = true;
   _lastTrackFinished = 0;
   numTracksInFolder = mp3.getFolderTrackCount(myFolder->folder);
@@ -809,7 +774,7 @@ void playShortCut(uint8_t shortCut) {
   if (mySettings.shortCuts[shortCut].folder != 0) {
     myFolder = &mySettings.shortCuts[shortCut];
     playFolder();
-    disablestandbyTimer();
+    standby.stop();
     delay(1000);
   }
   else
@@ -818,7 +783,7 @@ void playShortCut(uint8_t shortCut) {
 
 void loop() {
   do {
-    checkStandbyAtMillis();
+    standby.loop();
     mp3.loop();
 
     // Modifier : WIP!
@@ -848,11 +813,11 @@ void loop() {
       {
         if (isPlaying()) {
           mp3.pause();
-          setstandbyTimer();
+          standby.start(mySettings.standbyTimer * 60 * 1000);
         }
         else if (knownCard) {
           mp3.start();
-          disablestandbyTimer();
+          standby.stop();
         }
       }
       ignorePauseButton = false;
@@ -988,7 +953,7 @@ void loop() {
 }
 
 void adminMenu(bool fromCard) {
-  disablestandbyTimer();
+  standby.stop();
   mp3.pause();
   Serial.println(F("=== adminMenu()"));
   knownCard = false;
@@ -1199,7 +1164,7 @@ void adminMenu(bool fromCard) {
 
   }
   writeSettingsToFlash(myFolder);
-  setstandbyTimer();
+  standby.start(mySettings.standbyTimer * 60 * 1000);
 }
 
 bool askCode(uint8_t *code) {
@@ -1237,7 +1202,7 @@ uint8_t voiceMenu(int numberOfOptions, int startMessage, int messageOffset,
     if (pauseButton.pressedFor(LONG_PRESS)) {
       mp3.playMp3FolderTrack(802);
       ignorePauseButton = true;
-      checkStandbyAtMillis();
+      standby.loop();
       return defaultValue;
     }
     if (pauseButton.wasReleased()) {

@@ -8,7 +8,7 @@
 
 class Mp3Notify;
 
-typedef DFMiniMp3<SoftwareSerial, Mp3Notify> Player;
+typedef DFMiniMp3<SoftwareSerial, Mp3Notify> Mp3Player;
 
 class Mp3Notify
 {
@@ -28,3 +28,23 @@ public:
 private:
     static void(*_onPlayFinishedHandler)(uint16_t);
 };
+
+class Player
+{
+    public:
+        Player(uint8_t busyPin, SoftwareSerial serial) 
+            : _busyPin(busyPin), _player(serial) 
+            {}
+
+        void loop(void) { _player.loop(); }
+
+        Mp3Player &GetMp3Player(void) { return _player; }
+        bool waitForTrackToFinish(void);
+        bool isPlaying(void) { return !digitalRead(_busyPin); }
+
+        void say(uint16_t track);
+    private:
+        const uint8_t _busyPin;
+        Mp3Player _player;
+};
+

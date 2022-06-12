@@ -24,7 +24,7 @@ bool CardManager::readCard(NfcTagObject &nfcTag)
         return false;
 
     if (!_mfrc522.PICC_ReadCardSerial())
-        return;
+        return false;
 
     // Show some details of the PICC (that is: the tag/card)
     Serial.print(F("Card UID:"));

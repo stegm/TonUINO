@@ -94,7 +94,7 @@ void dump_byte_array(byte * buffer, byte bufferSize);
 void adminMenu(bool fromCard = false);
 void playFolder();
 void playShortCut(uint8_t shortCut);
-bool readCard(NfcTagObject * nfcTag);
+bool handleReadCard(NfcTagObject &nfcTag);
 void setupCard();
 bool askCode(uint8_t *code);
 void resetCard();
@@ -767,8 +767,7 @@ void playShortCut(uint8_t shortCut) {
 }
 
 void loop() {
-    auto mfrc522 = cardManager.GetReader();
-  do {
+
     standby.loop();
     mp3.loop();
 
@@ -788,7 +787,6 @@ void loop() {
         readButtons();
       } while (pauseButton.isPressed() || upButton.isPressed() || downButton.isPressed());
       adminMenu();
-      break;
     }
 
     if (pauseButton.wasReleased()) {
@@ -913,29 +911,23 @@ void loop() {
       }
     }
 #endif
-    // Ende der Buttons
-  } while (!mfrc522.PICC_IsNewCardPresent());
 
-  // RFID Karte wurde aufgelegt
-
-  if (!mfrc522.PICC_ReadCardSerial())
-    return;
-
-  if (readCard(&myCard) == true) {
-    if (myCard.cookie == cardCookie && myCard.nfcFolderSettings.folder != 0 && myCard.nfcFolderSettings.mode != 0) {
-      playFolder();
+    if (cardManager.readCard(myCard))
+    {
+      if (handleReadCard(myCard)) {
+        if (myCard.cookie == cardCookie 
+            && myCard.nfcFolderSettings.folder != 0 
+            && myCard.nfcFolderSettings.mode != 0) {
+          playFolder();
+        } else if (myCard.cookie != cardCookie) {
+          // Neue Karte konfigurieren
+          knownCard = false;
+          mp3.playMp3FolderTrack(300);
+          waitForTrackToFinish();
+          setupCard();
+        }
+      }
     }
-
-    // Neue Karte konfigurieren
-    else if (myCard.cookie != cardCookie) {
-      knownCard = false;
-      mp3.playMp3FolderTrack(300);
-      waitForTrackToFinish();
-      setupCard();
-    }
-  }
-  mfrc522.PICC_HaltA();
-  mfrc522.PCD_StopCrypto1();
 }
 
 void adminMenu(bool fromCard) {
@@ -1340,47 +1332,50 @@ void setupCard() {
   delay(1000);
 }
 
-bool readCard(NfcTagObject * nfcTag) {
-
-  NfcTagObject tempCard;
-
-  if (!cardManager.readCard(tempCard))
+bool handleReadCard(NfcTagObject &readTag)
+{
+  if (readTag.cookie == cardCookie)
   {
-    return false;
-  }
-
-  if (tempCard.cookie == cardCookie) {
-
-    if (activeModifier != NULL && tempCard.nfcFolderSettings.folder != 0) {
-      if (activeModifier->handleRFID(&tempCard) == true) {
+    if (activeModifier != NULL && readTag.nfcFolderSettings.folder != 0)
+    {
+      if (activeModifier->handleRFID(&readTag))
         return false;
-      }
     }
 
-    if (tempCard.nfcFolderSettings.folder == 0) {
-      if (activeModifier != NULL) {
-        if (activeModifier->getActive() == tempCard.nfcFolderSettings.mode) {
+    if (readTag.nfcFolderSettings.folder == 0)
+    {
+      if (activeModifier != NULL)
+      {
+        if (activeModifier->getActive() == readTag.nfcFolderSettings.mode)
+        {
           activeModifier = NULL;
           Serial.println(F("modifier removed"));
-          if (isPlaying()) {
+          if (isPlaying())
+          {
             mp3.playAdvertisement(261);
           }
-          else {
+          else
+          {
             mp3.start();
             delay(100);
             mp3.playAdvertisement(261);
             delay(100);
             mp3.pause();
           }
+
           delay(2000);
           return false;
         }
       }
-      if (tempCard.nfcFolderSettings.mode != 0 && tempCard.nfcFolderSettings.mode != 255) {
-        if (isPlaying()) {
+
+      if (readTag.nfcFolderSettings.mode != 0 && readTag.nfcFolderSettings.mode != 255)
+      {
+        if (isPlaying())
+        {
           mp3.playAdvertisement(260);
         }
-        else {
+        else
+        {
           mp3.start();
           delay(100);
           mp3.playAdvertisement(260);
@@ -1388,34 +1383,45 @@ bool readCard(NfcTagObject * nfcTag) {
           mp3.pause();
         }
       }
-      switch (tempCard.nfcFolderSettings.mode ) {
-        case 0:
-        case 255:
-          cardManager.GetReader().PICC_HaltA(); 
-          cardManager.GetReader().PCD_StopCrypto1(); 
-          adminMenu(true);  
-          break;
-        case 1: activeModifier = new SleepTimer(tempCard.nfcFolderSettings.special); break;
-        case 2: activeModifier = new FreezeDance(); break;
-        case 3: activeModifier = new Locked(); break;
-        case 4: activeModifier = new ToddlerMode(); break;
-        case 5: activeModifier = new KindergardenMode(); break;
-        case 6: activeModifier = new RepeatSingleModifier(); break;
 
+      switch (readTag.nfcFolderSettings.mode)
+      {
+      case 0:
+      case 255:
+        adminMenu(true);
+        break;
+      case 1:
+        activeModifier = new SleepTimer(readTag.nfcFolderSettings.special);
+        break;
+      case 2:
+        activeModifier = new FreezeDance();
+        break;
+      case 3:
+        activeModifier = new Locked();
+        break;
+      case 4:
+        activeModifier = new ToddlerMode();
+        break;
+      case 5:
+        activeModifier = new KindergardenMode();
+        break;
+      case 6:
+        activeModifier = new RepeatSingleModifier();
+        break;
       }
       delay(2000);
       return false;
     }
-    else {
-      memcpy(nfcTag, &tempCard, sizeof(NfcTagObject));
-      Serial.println( nfcTag->nfcFolderSettings.folder);
-      myFolder = &nfcTag->nfcFolderSettings;
-      Serial.println( myFolder->folder);
+    else
+    {
+      Serial.println(readTag.nfcFolderSettings.folder);
+      myFolder = &readTag.nfcFolderSettings;
+      Serial.println(myFolder->folder);
     }
     return true;
   }
-  else {
-    memcpy(nfcTag, &tempCard, sizeof(NfcTagObject));
+  else
+  {
     return true;
   }
 }

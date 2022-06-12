@@ -14,12 +14,18 @@ static void dump_byte_array(byte *buffer, byte bufferSize)
 
 void CardManager::begin(void)
 {
-  _mfrc522.PCD_Init(); // Init MFRC522
-  _mfrc522.PCD_DumpVersionToSerial(); // Show details of PCD - MFRC522 Card Reader    
+    _mfrc522.PCD_Init();                // Init MFRC522
+    _mfrc522.PCD_DumpVersionToSerial(); // Show details of PCD - MFRC522 Card Reader
 }
 
 bool CardManager::readCard(NfcTagObject &nfcTag)
 {
+    if (!_mfrc522.PICC_IsNewCardPresent())
+        return false;
+
+    if (!_mfrc522.PICC_ReadCardSerial())
+        return;
+
     // Show some details of the PICC (that is: the tag/card)
     Serial.print(F("Card UID:"));
     dump_byte_array(_mfrc522.uid.uidByte, _mfrc522.uid.size);
@@ -30,7 +36,7 @@ bool CardManager::readCard(NfcTagObject &nfcTag)
 
     byte trailerBlock = 7;
     byte blockAddr = 4;
-    MFRC522::MIFARE_Key key = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+    MFRC522::MIFARE_Key key = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     MFRC522::StatusCode status;
 
     // Authenticate using key A
@@ -129,6 +135,9 @@ bool CardManager::readCard(NfcTagObject &nfcTag)
         memcpy(buffer + 12, buffer2, 4);
     }
 
+    _mfrc522.PICC_HaltA();
+    _mfrc522.PCD_StopCrypto1();
+
     Serial.print(F("Data on Card "));
     Serial.println(F(":"));
     dump_byte_array(buffer, 16);
@@ -167,7 +176,7 @@ CardManagerError CardManager::writeCard(const NfcTagObject &nfcTag)
     MFRC522::StatusCode status;
     byte trailerBlock = 7;
     byte blockAddr = 4;
-    MFRC522::MIFARE_Key key = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+    MFRC522::MIFARE_Key key = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
     // Authenticate using key B
     // authentificate with the card and set card specific parameters

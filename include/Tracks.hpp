@@ -1,0 +1,19 @@
+#pragma once
+
+// playMp3FolderTrack
+
+#define TRACK_NEW_CARD 300
+#define TRACK_CARD_CONFIGURED 400
+#define TRACK_ERROR 401
+
+#define TRACK_PLACE_CARD 800
+#define TRACK_CANCELLED 802
+
+#define TRACK_BATCH_CARD_INTRO 936
+
+#define TRACK_INPUT_PIN 991
+#define TRACK_SUM_OF 992
+#define TRACK_PLUS 993
+#define TRACK_MINUS 994
+
+#define TRACK_RESET_DONE 999

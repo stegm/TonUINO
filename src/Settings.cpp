@@ -87,8 +87,19 @@ void loadSettingsFromFlash(uint32_t cardCookie, FolderSettings * myFolder) {
 
   Serial.print(F("Admin Menu Pin: "));
   Serial.print(mySettings.adminMenuPin[0]);
+  Serial.print(F(":"));
   Serial.print(mySettings.adminMenuPin[1]);
+  Serial.print(F(":"));
   Serial.print(mySettings.adminMenuPin[2]);
+  Serial.print(F(":"));
   Serial.println(mySettings.adminMenuPin[3]);
+
+  for (uint8_t i = 0; i < 4; i++)
+  {
+    Serial.print(F("Shortcut "));
+    Serial.print(i);
+    Serial.print(F(" Folder="));
+    Serial.println(mySettings.shortCuts[i].folder);
+  }
 }
 

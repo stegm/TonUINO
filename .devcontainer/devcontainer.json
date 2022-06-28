@@ -21,13 +21,13 @@
 
 	"runArgs": [
 		// --privileged grants access to /dev on host. Arduino will most likely be /dev/ttysN
-		//"--privileged"
+		"--privileged"
 	],
 
 	"remoteUser": "vscode",
 
 	"mounts": [
 		// Mount the host's device to this container's.
-		//"source=/dev,target=/dev,type=bind,consistency=consistent"
+		"source=/dev,target=/dev,type=bind,consistency=consistent"
 	]
 }

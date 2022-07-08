@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
-#include <DFMiniMp3.h>
+#include <DFMiniMp3L.h>
 #include <SoftwareSerial.h>
 
 class Mp3Notify;

@@ -61,49 +61,19 @@ void Mp3Player::loop(void)
 void Mp3Player::play(uint8_t folder, uint16_t track)
 {
     _lastPlayedFolder = folder;
-
-    for (uint8_t repeat = 0; repeat < 3; repeat++)
-    {
-        Mp3Notify::ResetError();
-        _player.playFolderTrack(folder, track);
-        delay(200);
-        _player.loop();
-        if (!Mp3Notify::HasError())
-            break;
-        Serial.println("Error - repeat.");
-    }
+    _player.playFolderTrack(folder, track);
 }
 
 void Mp3Player::playNotification(uint16_t track)
 {
     _lastPlayedFolder = 0;
-
-    for (uint8_t repeat = 0; repeat < 3; repeat++)
-    {
-        Mp3Notify::ResetError();
-        _player.playMp3FolderTrack(track);
-        delay(200);
-        _player.loop();
-        if (!Mp3Notify::HasError())
-            break;
-        Serial.println("Error - repeat.");
-    }
+    _player.playMp3FolderTrack(track);
 }
 
 void Mp3Player::playAdvertisement(uint16_t track)
 {
     _lastPlayedFolder = 0;
-
-    for (uint8_t repeat = 0; repeat < 3; repeat++)
-    {
-        Mp3Notify::ResetError();
-        _player.playAdvertisement(track);
-        delay(200);
-        _player.loop();
-        if (!Mp3Notify::HasError())
-            break;
-        Serial.println("Error - repeat.");
-    }
+    _player.playAdvertisement(track);
 }
 
 void Mp3Player::pause(void)
@@ -141,10 +111,13 @@ uint16_t Mp3Player::getReliableTrackCountForFolder(uint16_t folder)
     {
         // Workaround getTotalFolderCount liefert falschen Wert, wenn
         // der Folder nicht vorher angewählt wurde
+        uint8_t volume = _player.getVolume();
+        _player.setVolume(0);
         _player.playFolderTrack(folder, 1);
-        delay(200);
+        //delay(300);
         _player.stop();
-        delay(200);
+        // delay(200);
+        _player.setVolume(volume);
     }
 
     return _player.getFolderTrackCount(folder);

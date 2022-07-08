@@ -6,6 +6,7 @@ void Mp3Notify::OnError(uint16_t errorCode)
     Serial.println();
     Serial.print("Com Error ");
     Serial.println(errorCode);
+    _hasError = true;
 }
 
 void Mp3Notify::PrintlnSourceAction(DfMp3_PlaySources source, const char *action)
@@ -43,6 +44,7 @@ void Mp3Notify::OnPlaySourceRemoved(DfMp3_PlaySources source)
     PrintlnSourceAction(source, "entfernt");
 }
 
+bool Mp3Notify::_hasError;
 void (*Mp3Notify::_onPlayFinishedHandler)(uint16_t);
 
 
@@ -58,17 +60,50 @@ void Mp3Player::loop(void)
 
 void Mp3Player::play(uint8_t folder, uint16_t track)
 {
-    _player.playFolderTrack(folder, track);
+    _lastPlayedFolder = folder;
+
+    for (uint8_t repeat = 0; repeat < 3; repeat++)
+    {
+        Mp3Notify::ResetError();
+        _player.playFolderTrack(folder, track);
+        delay(200);
+        _player.loop();
+        if (!Mp3Notify::HasError())
+            break;
+        Serial.println("Error - repeat.");
+    }
 }
 
 void Mp3Player::playNotification(uint16_t track)
 {
-    _player.playMp3FolderTrack(track);
+    _lastPlayedFolder = 0;
+
+    for (uint8_t repeat = 0; repeat < 3; repeat++)
+    {
+        Mp3Notify::ResetError();
+        _player.playMp3FolderTrack(track);
+        delay(200);
+        _player.loop();
+        if (!Mp3Notify::HasError())
+            break;
+        Serial.println("Error - repeat.");
+    }
 }
 
 void Mp3Player::playAdvertisement(uint16_t track)
 {
-    _player.playAdvertisement(track);
+    _lastPlayedFolder = 0;
+
+    for (uint8_t repeat = 0; repeat < 3; repeat++)
+    {
+        Mp3Notify::ResetError();
+        _player.playAdvertisement(track);
+        delay(200);
+        _player.loop();
+        if (!Mp3Notify::HasError())
+            break;
+        Serial.println("Error - repeat.");
+    }
 }
 
 void Mp3Player::pause(void)
@@ -102,12 +137,15 @@ void Mp3Player::waitForTrackToFinish(void)
 
 uint16_t Mp3Player::getReliableTrackCountForFolder(uint16_t folder)
 {
-    // Workaround getTotalFolderCount liefert falschen Wert, wenn
-    // der Folder nicht vorher angewählt wurde
-    _player.playFolderTrack(folder, 1);
-    delay(200);
-    _player.stop();
-    delay(200);
+    if (_lastPlayedFolder != folder)
+    {
+        // Workaround getTotalFolderCount liefert falschen Wert, wenn
+        // der Folder nicht vorher angewählt wurde
+        _player.playFolderTrack(folder, 1);
+        delay(200);
+        _player.stop();
+        delay(200);
+    }
 
     return _player.getFolderTrackCount(folder);
 }

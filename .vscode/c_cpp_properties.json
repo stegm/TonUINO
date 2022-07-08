@@ -10,8 +10,8 @@
             "includePath": [
                 "/workspaces/TonUINO/include",
                 "/workspaces/TonUINO/src",
-                "/home/vscode/.platformio/packages/framework-arduino-avr/libraries/SoftwareSerial/src",
                 "/home/vscode/.platformio/packages/framework-arduino-avr/libraries/EEPROM/src",
+                "/home/vscode/.platformio/packages/framework-arduino-avr/libraries/SoftwareSerial/src",
                 "/workspaces/TonUINO/.pio/libdeps/nanoatmega328/DFPlayer Mini Mp3 by Makuna/src",
                 "/workspaces/TonUINO/.pio/libdeps/nanoatmega328/JC_Button/src",
                 "/workspaces/TonUINO/.pio/libdeps/nanoatmega328/MFRC522/src",
@@ -27,8 +27,8 @@
                 "path": [
                     "/workspaces/TonUINO/include",
                     "/workspaces/TonUINO/src",
-                    "/home/vscode/.platformio/packages/framework-arduino-avr/libraries/SoftwareSerial/src",
                     "/home/vscode/.platformio/packages/framework-arduino-avr/libraries/EEPROM/src",
+                    "/home/vscode/.platformio/packages/framework-arduino-avr/libraries/SoftwareSerial/src",
                     "/workspaces/TonUINO/.pio/libdeps/nanoatmega328/DFPlayer Mini Mp3 by Makuna/src",
                     "/workspaces/TonUINO/.pio/libdeps/nanoatmega328/JC_Button/src",
                     "/workspaces/TonUINO/.pio/libdeps/nanoatmega328/MFRC522/src",
@@ -41,7 +41,7 @@
                 ]
             },
             "defines": [
-                "PLATFORMIO=60002",
+                "PLATFORMIO=60100",
                 "ARDUINO_AVR_NANO",
                 "F_CPU=16000000L",
                 "ARDUINO_ARCH_AVR",

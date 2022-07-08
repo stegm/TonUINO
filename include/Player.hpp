@@ -23,9 +23,14 @@ public:
         _onPlayFinishedHandler = handler;
     }
 
+    static void ResetError(void) { _hasError = false; }
+    static bool HasError(void) { return _hasError; }
+
 private:
+    static bool _hasError;
     static void (*_onPlayFinishedHandler)(uint16_t);
 };
+
 
 class Mp3Player
 {
@@ -65,4 +70,5 @@ public:
 private:
     Player _player;
     const uint8_t _busyPin;
+    uint16_t _lastPlayedFolder;
 };

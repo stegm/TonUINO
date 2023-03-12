@@ -103,7 +103,7 @@ void writeCard(nfcTagObject nfcTag);
 void dump_byte_array(byte *buffer, byte bufferSize);
 void adminMenu(bool fromCard = false);
 void playFolder();
-void playShortCut(uint8_t shortCut);
+bool playShortCut(uint8_t shortCut);
 bool readCard(nfcTagObject *nfcTag);
 void setupCard();
 bool askCode(uint8_t *code);
@@ -723,7 +723,9 @@ void setup()
   }
 
   // Start Shortcut "at Startup" - e.g. Welcome Sound
-  playShortCut(3);
+  if (!playShortCut(3)) {
+    player.playNotification(TRACK_STARTUP);
+  }
 }
 
 void readButtons()
@@ -881,7 +883,7 @@ void playFolder()
   }
 }
 
-void playShortCut(uint8_t shortCut)
+bool playShortCut(uint8_t shortCut)
 {
   Serial.print(F("=== playShortCut("));
   Serial.print(shortCut);
@@ -893,10 +895,12 @@ void playShortCut(uint8_t shortCut)
     playFolder();
     standby.stop();
     delay(1000);
+    return true;
   }
   else
   {
     Serial.println(F("Shortcut not configured!"));
+    return false;
   }
 }
 

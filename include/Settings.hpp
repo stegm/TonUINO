@@ -18,7 +18,7 @@ typedef struct {
   bool invertVolumeButtons;
   FolderSettings shortCuts[4];
   uint8_t adminMenuLocked;
-  uint8_t adminMenuPin[4];
+  uint8_t adminMenuPin[PIN_DIGIT_COUNT];
 } AdminSettings;
 
 extern AdminSettings mySettings;

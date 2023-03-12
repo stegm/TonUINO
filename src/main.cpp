@@ -1,5 +1,7 @@
 #include <Arduino.h>
 
+#include <ArduinoLog.h>
+
 #include "Types.hpp"
 #include "Settings.hpp"
 #include "Player.hpp"
@@ -47,6 +49,10 @@ struct nfcTagObject
   //  uint8_t special;
   //  uint8_t special2;
 };
+
+#define ADMIN_MENU_LOCKED_CARD 1u
+#define ADMIN_MENU_LOCKED_PIN 2u
+#define ADMIN_MENU_LOCKED_CHECK 3u
 
 nfcTagObject myCard;
 FolderSettings *myFolder;
@@ -97,8 +103,8 @@ Mp3Player player(playerSerial, busyPin);
 StandbyTimer standby(mfrc522, player, shutdownPin);
 
 static void onTrackFinished(uint16_t track);
-uint8_t voiceMenu(int numberOfOptions, int startMessage, int messageOffset,
-                  bool preview = false, int previewFromFolder = 0, int defaultValue = 0, bool exitWithLongPress = false);
+uint8_t voiceMenu(uint8_t numberOfOptions, uint16_t startMessage, uint16_t messageOffset,
+                  bool preview = false, uint8_t previewFromFolder = 0, uint8_t defaultValue = 0u, bool exitWithLongPress = false);
 void writeCard(nfcTagObject nfcTag);
 void dump_byte_array(byte *buffer, byte bufferSize);
 void adminMenu(bool fromCard = false);
@@ -106,7 +112,7 @@ void playFolder();
 bool playShortCut(uint8_t shortCut);
 bool readCard(nfcTagObject *nfcTag);
 void setupCard();
-bool askCode(uint8_t *code);
+bool askCode(uint8_t *code, size_t digit);
 void resetCard();
 bool setupFolder(FolderSettings *theFolder);
 bool knownCard = false;
@@ -651,7 +657,8 @@ static void onTrackFinished(uint16_t track)
 void setup()
 {
 
-  Serial.begin(115200); // Es gibt ein paar Debug Ausgaben über die serielle Schnittstelle
+  Serial.begin(115200);
+  Log.begin(LOG_LEVEL_VERBOSE, &Serial);
 
   // Wert für randomSeed() erzeugen durch das mehrfache Sammeln von rauschenden LSBs eines offenen Analogeingangs
   uint32_t ADC_LSB;
@@ -661,7 +668,8 @@ void setup()
     ADC_LSB = analogRead(openAnalogPin) & 0x1;
     ADCSeed ^= ADC_LSB << (i % 32);
   }
-  randomSeed(ADCSeed); // Zufallsgenerator initialisieren
+  // Zufallsgenerator initialisieren
+  randomSeed(ADCSeed); 
 
   // Dieser Hinweis darf nicht entfernt werden
   Serial.println(F("\n _____         _____ _____ _____ _____"));
@@ -671,8 +679,6 @@ void setup()
   Serial.println(F("TonUINO Version 2.1"));
   Serial.println(F("created by Thorsten Voß and licensed under GNU/GPL."));
   Serial.println(F("Information and contribution at https://tonuino.de.\n"));
-
-
 
   // load Settings from EEPROM
   loadSettingsFromFlash(cardCookie, myFolder);
@@ -714,11 +720,12 @@ void setup()
   if (digitalRead(buttonPause) == LOW && digitalRead(buttonUp) == LOW &&
       digitalRead(buttonDown) == LOW)
   {
-    Serial.println(F("Reset -> EEPROM wird gelöscht"));
+    Log.warning(F("Reset -> EEPROM wird gelöscht" CR));
     for (uint16_t i = 0; i < EEPROM.length(); i++)
     {
-      EEPROM.update(i, 0);
+      EEPROM.update(i, 0u);
     }
+
     loadSettingsFromFlash(cardCookie, myFolder);
   }
 
@@ -726,6 +733,8 @@ void setup()
   if (!playShortCut(3)) {
     player.playNotification(TRACK_STARTUP);
   }
+
+  Log.info(F("Startup finished" CR));
 }
 
 void readButtons()
@@ -742,37 +751,37 @@ void readButtons()
 void volumeUpButton()
 {
   if (activeModifier != NULL)
-    if (activeModifier->handleVolumeUp() == true)
+    if (activeModifier->handleVolumeUp())
       return;
 
-  Serial.println(F("=== volumeUp()"));
-  if (volume < mySettings.maxVolume)
+    if (volume < mySettings.maxVolume)
   {
     player.increaseVolume();
     volume++;
   }
-  Serial.println(volume);
+
+  Log.info(F("Volume up to %u" CR) , volume);
 }
 
 void volumeDownButton()
 {
   if (activeModifier != NULL)
-    if (activeModifier->handleVolumeDown() == true)
+    if (activeModifier->handleVolumeDown())
       return;
 
-  Serial.println(F("=== volumeDown()"));
   if (volume > mySettings.minVolume)
   {
     player.decreaseVolume();
     volume--;
   }
-  Serial.println(volume);
+
+  Log.info(F("Volume down to %u" CR) , volume);
 }
 
 void nextButton()
 {
   if (activeModifier != NULL)
-    if (activeModifier->handleNextButton() == true)
+    if (activeModifier->handleNextButton())
       return;
 
   nextTrack();
@@ -781,7 +790,7 @@ void nextButton()
 void previousButton()
 {
   if (activeModifier != NULL)
-    if (activeModifier->handlePreviousButton() == true)
+    if (activeModifier->handlePreviousButton())
       return;
 
   previousTrack();
@@ -789,82 +798,79 @@ void previousButton()
 
 void playFolder()
 {
-  Serial.println(F("== playFolder()"));
+  Log.info(F("play folder" CR));
 
   standby.stop();
   knownCard = true;
-  _lastTrackFinished = 0;
+  _lastTrackFinished = 0u;
 
   numTracksInFolder = player.getReliableTrackCountForFolder(myFolder->folder);
-  firstTrack = 1;
-  Serial.print(numTracksInFolder);
-  Serial.print(F(" Dateien in Ordner "));
-  Serial.println(myFolder->folder);
+  firstTrack = 1u;
+
+  Log.notice(F("%u file in folder %u"), numTracksInFolder, myFolder->folder);
 
   // Hörspielmodus: eine zufällige Datei aus dem Ordner
   if (myFolder->mode == 1)
   {
-    Serial.println(F("Hörspielmodus -> zufälligen Track wiedergeben"));
+    Log.info(F("Hörspielmodus -> play random track in folder" CR));
     currentTrack = random(1, numTracksInFolder + 1);
-    Serial.println(currentTrack);
+    Log.notice(F("random track is %u" CR), currentTrack);
     player.play(myFolder->folder, currentTrack);
   }
+
   // Album Modus: kompletten Ordner spielen
   if (myFolder->mode == 2)
   {
-    Serial.println(F("Album Modus -> kompletten Ordner wiedergeben"));
-    currentTrack = 1;
+    Log.info(F("Album Modus -> play complete folder." CR));
+    currentTrack = 1u;
     player.play(myFolder->folder, currentTrack);
   }
+
   // Party Modus: Ordner in zufälliger Reihenfolge
   if (myFolder->mode == 3)
   {
-    Serial.println(
-        F("Party Modus -> Ordner in zufälliger Reihenfolge wiedergeben"));
+    Log.info(F("Party Modus -> play folder in random order" CR));
     shuffleQueue();
-    currentTrack = 1;
+    currentTrack = 1u;
     player.play(myFolder->folder, queue[currentTrack - 1]);
   }
+
   // Einzel Modus: eine Datei aus dem Ordner abspielen
   if (myFolder->mode == 4)
   {
-    Serial.println(
-        F("Einzel Modus -> eine Datei aus dem Odrdner abspielen"));
+    Log.info(F("Einzel Modus -> play a single track in an folder" CR));
     currentTrack = myFolder->special;
     player.play(myFolder->folder, currentTrack);
   }
+
   // Hörbuch Modus: kompletten Ordner spielen und Fortschritt merken
   if (myFolder->mode == 5)
   {
-    Serial.println(F("Hörbuch Modus -> kompletten Ordner spielen und "
-                     "Fortschritt merken"));
+    Log.info(F("Hörbuch Modus -> play complete folder and save progress" CR));
     currentTrack = EEPROM.read(myFolder->folder);
     if (currentTrack == 0 || currentTrack > numTracksInFolder)
     {
-      currentTrack = 1;
+      Log.notice(F("Start at track 1" CR));
+      currentTrack = 1u;
     }
     player.play(myFolder->folder, currentTrack);
   }
+
   // Spezialmodus Von-Bin: Hörspiel: eine zufällige Datei aus dem Ordner
   if (myFolder->mode == 7)
   {
-    Serial.println(F("Spezialmodus Von-Bin: Hörspiel -> zufälligen Track wiedergeben"));
-    Serial.print(myFolder->special);
-    Serial.print(F(" bis "));
-    Serial.println(myFolder->special2);
+    Log.info(F("Spezialmodus von %u bis %u Hörspiel -> play random track" CR), myFolder->special, myFolder->special2);
     numTracksInFolder = myFolder->special2;
-    currentTrack = random(myFolder->special, numTracksInFolder + 1);
-    Serial.println(currentTrack);
+    currentTrack = random(myFolder->special, numTracksInFolder + 1u);
+
+    Log.notice(F("Play track %u" CR), currentTrack);
     player.play(myFolder->folder, currentTrack);
   }
 
   // Spezialmodus Von-Bis: Album: alle Dateien zwischen Start und Ende spielen
   if (myFolder->mode == 8)
   {
-    Serial.println(F("Spezialmodus Von-Bis: Album: alle Dateien zwischen Start- und Enddatei spielen"));
-    Serial.print(myFolder->special);
-    Serial.print(F(" bis "));
-    Serial.println(myFolder->special2);
+    Log.info(F("Spezialmodus von %u bis %u Album -> play all tracks between start and end" CR), myFolder->special, myFolder->special2);
     numTracksInFolder = myFolder->special2;
     currentTrack = myFolder->special;
     player.play(myFolder->folder, currentTrack);
@@ -873,21 +879,18 @@ void playFolder()
   // Spezialmodus Von-Bis: Party Ordner in zufälliger Reihenfolge
   if (myFolder->mode == 9)
   {
-    Serial.println(
-        F("Spezialmodus Von-Bis: Party -> Ordner in zufälliger Reihenfolge wiedergeben"));
+    Log.info(F("Spezialmodus von %u bis %u Party -> play folder in random order" CR), myFolder->special, myFolder->special2);
     firstTrack = myFolder->special;
     numTracksInFolder = myFolder->special2;
     shuffleQueue();
-    currentTrack = 1;
-    player.play(myFolder->folder, queue[currentTrack - 1]);
+    currentTrack = 1u;
+    player.play(myFolder->folder, queue[currentTrack - 1u]);
   }
 }
 
 bool playShortCut(uint8_t shortCut)
 {
-  Serial.print(F("=== playShortCut("));
-  Serial.print(shortCut);
-  Serial.println(F(")"));
+  Log.info(F("Play shortcut %u" CR), shortCut);
 
   if (mySettings.shortCuts[shortCut].folder != 0 && mySettings.shortCuts[shortCut].folder != 255)
   {
@@ -899,7 +902,7 @@ bool playShortCut(uint8_t shortCut)
   }
   else
   {
-    Serial.println(F("Shortcut not configured!"));
+    Log.warning(F("Shortcut %u not configured" CR), shortCut);
     return false;
   }
 }
@@ -922,13 +925,15 @@ void loop()
     readButtons();
 
     // admin menu
-    if ((pauseButton.pressedFor(LONG_PRESS) || upButton.pressedFor(LONG_PRESS) || downButton.pressedFor(LONG_PRESS)) && pauseButton.isPressed() && upButton.isPressed() && downButton.isPressed())
+    if ((pauseButton.pressedFor(LONG_PRESS) || upButton.pressedFor(LONG_PRESS) || downButton.pressedFor(LONG_PRESS)) 
+        && pauseButton.isPressed() && upButton.isPressed() && downButton.isPressed())
     {
       player.pause();
       do
       {
         readButtons();
       } while (pauseButton.isPressed() || upButton.isPressed() || downButton.isPressed());
+
       adminMenu();
       break;
     }
@@ -1126,35 +1131,30 @@ void adminMenu(bool fromCard)
 {
   standby.stop();
   player.pause();
-  Serial.println(F("=== adminMenu()"));
+
+  Log.notice(F("Enter admin menu" CR));
+
   knownCard = false;
   if (!fromCard)
   {
-    // Admin menu has been locked - it still can be trigged via admin card
-    if (mySettings.adminMenuLocked == 1)
+    if (mySettings.adminMenuLocked == ADMIN_MENU_LOCKED_CARD)
     {
+      // Admin menu has been locked - it still can be trigged via admin card
       return;
     }
-    // Pin check
-    else if (mySettings.adminMenuLocked == 2)
+    else if (mySettings.adminMenuLocked == ADMIN_MENU_LOCKED_PIN)
     {
-      uint8_t pin[4];
+      // Pin check
+      uint8_t pin[ARRAY_SIZE(mySettings.adminMenuPin)];
       player.playNotification(TRACK_INPUT_PIN);
-      if (askCode(pin))
-      {
-        if (memcmp(pin, mySettings.adminMenuPin, 4) == 0)
-        {
-          return;
-        }
-      }
-      else
+      if (!askCode(pin, ARRAY_SIZE(pin)) || (memcmp(pin, mySettings.adminMenuPin, ARRAY_SIZE(mySettings.adminMenuPin)) != 0))
       {
         return;
       }
     }
-    // Match check
-    else if (mySettings.adminMenuLocked == 3)
+    else if (mySettings.adminMenuLocked == ADMIN_MENU_LOCKED_CHECK)
     {
+      // Match check
       uint8_t a = random(10, 20);
       uint8_t b = random(1, 10);
       uint8_t c;
@@ -1189,9 +1189,12 @@ void adminMenu(bool fromCard)
   }
 
   int subMenu = voiceMenu(12, 900, 900, false, false, 0, true);
-  if (subMenu == 0)
+  if (subMenu == 0u)
+  {
     return;
-  if (subMenu == 1)
+  }
+
+  if (subMenu == 1u)
   {
     resetCard();
     mfrc522.PICC_HaltA();
@@ -1279,28 +1282,29 @@ void adminMenu(bool fromCard)
     setupFolder(&mySettings.shortCuts[shortcut - 1]);
     player.playNotification(TRACK_CARD_CONFIGURED);
   }
-  else if (subMenu == 8)
+  else if (subMenu == 8u)
   {
+    // standby timer
     switch (voiceMenu(5, 960, 960))
     {
-    case 1:
+    case 1u:
       mySettings.standbyTimer = 5;
       break;
-    case 2:
+    case 2u:
       mySettings.standbyTimer = 15;
       break;
-    case 3:
+    case 3u:
       mySettings.standbyTimer = 30;
       break;
-    case 4:
+    case 4u:
       mySettings.standbyTimer = 60;
       break;
-    case 5:
+    case 5u:
       mySettings.standbyTimer = 0;
       break;
     }
   }
-  else if (subMenu == 9)
+  else if (subMenu == 9u)
   {
     // Create Cards for Folder
     // Ordner abfragen
@@ -1346,7 +1350,7 @@ void adminMenu(bool fromCard)
       }
     }
   }
-  else if (subMenu == 10)
+  else if (subMenu == 10u)
   {
     // Invert Functions for Up/Down Buttons
     int temp = voiceMenu(2, 933, 933, false);
@@ -1372,119 +1376,117 @@ void adminMenu(bool fromCard)
     }
     else if (temp == 2)
     {
-      mySettings.adminMenuLocked = 1;
+      mySettings.adminMenuLocked = ADMIN_MENU_LOCKED_CARD;
     }
     else if (temp == 3)
     {
-      uint8_t pin[4];
+      uint8_t pin[ARRAY_SIZE(mySettings.adminMenuPin)];
       player.playNotification(TRACK_INPUT_PIN);
-      if (askCode(pin))
+      if (askCode(pin, ARRAY_SIZE(pin)))
       {
-        memcpy(mySettings.adminMenuPin, pin, 4);
-        mySettings.adminMenuLocked = 2;
+        memcpy(mySettings.adminMenuPin, pin, ARRAY_SIZE(mySettings.adminMenuPin));
+        mySettings.adminMenuLocked = ADMIN_MENU_LOCKED_PIN;
       }
     }
     else if (temp == 4)
     {
-      mySettings.adminMenuLocked = 3;
+      mySettings.adminMenuLocked = ADMIN_MENU_LOCKED_CHECK;
     }
   }
   writeSettingsToFlash(myFolder);
   standby.start(mySettings.standbyTimer * 60 * 1000);
 }
 
-bool askCode(uint8_t *code)
+bool askCode(uint8_t *code, size_t digit)
 {
-  uint8_t x = 0;
-  while (x < 4)
+  size_t x = 0u;
+  while (x < digit)
   {
     readButtons();
     if (pauseButton.pressedFor(LONG_PRESS))
-      break;
+    {
+      return false;
+    }
+
     if (pauseButton.wasReleased())
-      code[x++] = 1;
+    {
+      code[x++] = 1u;
+    }
+
     if (upButton.wasReleased())
-      code[x++] = 2;
+    {
+      code[x++] = 2u;
+    }
+
     if (downButton.wasReleased())
-      code[x++] = 3;
+    {
+      code[x++] = 3u;
+    }
   }
+
   return true;
 }
 
-uint8_t voiceMenu(int numberOfOptions, int startMessage, int messageOffset,
-                  bool preview, int previewFromFolder, int defaultValue, bool exitWithLongPress)
+uint8_t voiceMenu(uint8_t numberOfOptions, uint16_t startMessage, uint16_t messageOffset,
+                  bool preview, uint8_t previewFromFolder, uint8_t defaultValue, bool exitWithLongPress)
 {
   uint8_t returnValue = defaultValue;
-  if (startMessage != 0)
+
+  if (startMessage != 0u) 
+  {
     player.playNotification(startMessage);
-  Serial.print(F("=== voiceMenu() ("));
-  Serial.print(numberOfOptions);
-  Serial.println(F(" Options)"));
+  }
+
+  Log.info(F("Voice menu with %d options" CR), numberOfOptions);
+
   do
   {
     if (Serial.available() > 0)
     {
-      int optionSerial = Serial.parseInt();
-      if (optionSerial != 0 && optionSerial <= numberOfOptions)
-        return optionSerial;
+      long optionSerial = Serial.parseInt();
+      if (optionSerial > 0 && optionSerial <= numberOfOptions)
+      {
+        return (uint8_t)optionSerial;
+      }
     }
+
     readButtons();
     player.loop();
+
     if (pauseButton.pressedFor(LONG_PRESS))
     {
+      Log.notice(F("Voice menu cancelled - returning %u" CR), defaultValue);
       player.playNotification(TRACK_CANCELLED);
       ignorePauseButton = true;
       standby.loop();
       return defaultValue;
     }
+
     if (pauseButton.wasReleased())
     {
-      if (returnValue != 0)
+      if (returnValue != 0u)
       {
-        Serial.print(F("=== "));
-        Serial.print(returnValue);
-        Serial.println(F(" ==="));
+        Log.info(F("Option %u chosen" CR), returnValue);
         return returnValue;
       }
-      delay(1000);
+
+      Log.notice(F("No option chosen - pause ignored" CR));
     }
+
+    bool newReturnValue = false;
 
     if (upButton.pressedFor(LONG_PRESS))
     {
-      returnValue = min(returnValue + 10, numberOfOptions);
-      Serial.println(returnValue);
-      // player.pause();
-      player.playNotification(messageOffset + returnValue);
-      player.waitForTrackToFinish();
-      /*if (preview) {
-        if (previewFromFolder == 0)
-          mp3.playFolderTrack(returnValue, 1);
-        else
-          mp3.playFolderTrack(previewFromFolder, returnValue);
-        }*/
+      returnValue = min(returnValue + 10u, numberOfOptions);
+      newReturnValue = true;
       ignoreUpButton = true;
     }
     else if (upButton.wasReleased())
     {
       if (!ignoreUpButton)
       {
-        returnValue = min(returnValue + 1, numberOfOptions);
-        Serial.println(returnValue);
-        // player.pause();
-        player.playNotification(messageOffset + returnValue);
-        if (preview)
-        {
-          player.waitForTrackToFinish();
-          if (previewFromFolder == 0)
-          {
-            player.play(returnValue, 1);
-          }
-          else
-          {
-            player.play(previewFromFolder, returnValue);
-          }
-          delay(1000);
-        }
+        returnValue = min(returnValue + 1u, numberOfOptions);
+        newReturnValue = true;
       }
       else
       {
@@ -1494,44 +1496,40 @@ uint8_t voiceMenu(int numberOfOptions, int startMessage, int messageOffset,
 
     if (downButton.pressedFor(LONG_PRESS))
     {
-      returnValue = max(returnValue - 10, 1);
-      Serial.println(returnValue);
-      // player.pause();
-      player.playNotification(messageOffset + returnValue);
-      player.waitForTrackToFinish();
-      /*if (preview) {
-        if (previewFromFolder == 0)
-          mp3.playFolderTrack(returnValue, 1);
-        else
-          mp3.playFolderTrack(previewFromFolder, returnValue);
-        }*/
+      returnValue = returnValue > 10u ? returnValue - 10u : 1u;
+      newReturnValue = true;
       ignoreDownButton = true;
     }
     else if (downButton.wasReleased())
     {
       if (!ignoreDownButton)
       {
-        returnValue = max(returnValue - 1, 1);
-        Serial.println(returnValue);
-        // player.pause();
-        player.playNotification(messageOffset + returnValue);
-        if (preview)
-        {
-          player.waitForTrackToFinish();
-          if (previewFromFolder == 0)
-          {
-            player.play(returnValue, 1);
-          }
-          else
-          {
-            player.play(previewFromFolder, returnValue);
-          }
-          delay(1000);
-        }
+        returnValue = returnValue > 1u ? returnValue - 1u : 1u;
+        newReturnValue = true;
       }
       else
       {
         ignoreDownButton = false;
+      }
+    }
+
+    if (newReturnValue) {
+      newReturnValue = false;
+      Log.notice(F("New option %u" CR), returnValue);
+      player.playNotification(messageOffset + returnValue);
+      player.waitForTrackToFinish();
+
+      if (preview)
+      {
+        if (previewFromFolder == 0u)
+        {
+          player.play(returnValue, 1u);
+        }
+        else
+        {
+          player.play(previewFromFolder, returnValue);
+        }
+        delay(1000);
       }
     }
   } while (true);

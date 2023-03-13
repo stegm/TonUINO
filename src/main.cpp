@@ -8,9 +8,9 @@
 #include "StandbyTimer.hpp"
 #include "Tracks.hpp"
 #include "PlayMode.hpp"
+#include "Buttons.hpp"
 
 #include <EEPROM.h>
-#include <JC_Button.h>
 #include <MFRC522.h>
 #include <SPI.h>
 #include <SoftwareSerial.h>
@@ -69,38 +69,14 @@ byte blockAddr = 4;
 byte trailerBlock = 7;
 MFRC522::StatusCode status;
 
-#define buttonPause A0
-#define buttonUp A1
-#define buttonDown A2
 #define busyPin 4
 #define shutdownPin 7
 #define openAnalogPin A7
 
-#ifdef FIVEBUTTONS
-#define buttonFourPin A3
-#define buttonFivePin A4
-#endif
-
-#define LONG_PRESS 1000
-
-Button pauseButton(buttonPause);
-Button upButton(buttonUp);
-Button downButton(buttonDown);
-#ifdef FIVEBUTTONS
-Button buttonFour(buttonFourPin);
-Button buttonFive(buttonFivePin);
-#endif
-bool ignorePauseButton = false;
-bool ignoreUpButton = false;
-bool ignoreDownButton = false;
-#ifdef FIVEBUTTONS
-bool ignoreButtonFour = false;
-bool ignoreButtonFive = false;
-#endif
-
 SoftwareSerial playerSerial(2, 3); // RX, TX
 Mp3Player player(playerSerial, busyPin);
 StandbyTimer standby(mfrc522, player, shutdownPin);
+Buttons buttons;
 
 static void onTrackFinished(uint16_t track);
 uint8_t voiceMenu(uint8_t numberOfOptions, uint16_t startMessage, uint16_t messageOffset,
@@ -706,19 +682,11 @@ void setup()
     key.keyByte[i] = 0xFF;
   }
 
-  pinMode(buttonPause, INPUT_PULLUP);
-  pinMode(buttonUp, INPUT_PULLUP);
-  pinMode(buttonDown, INPUT_PULLUP);
-#ifdef FIVEBUTTONS
-  pinMode(buttonFourPin, INPUT_PULLUP);
-  pinMode(buttonFivePin, INPUT_PULLUP);
-#endif
   pinMode(shutdownPin, OUTPUT);
   digitalWrite(shutdownPin, LOW);
 
   // RESET --- ALLE DREI KNÖPFE BEIM STARTEN GEDRÜCKT HALTEN -> alle EINSTELLUNGEN werden gelöscht
-  if (digitalRead(buttonPause) == LOW && digitalRead(buttonUp) == LOW &&
-      digitalRead(buttonDown) == LOW)
+  if (buttons.factoryReset())
   {
     Log.warning(F("Reset -> EEPROM wird gelöscht" CR));
     for (uint16_t i = 0; i < EEPROM.length(); i++)
@@ -737,16 +705,6 @@ void setup()
   Log.info(F("Startup finished" CR));
 }
 
-void readButtons()
-{
-  pauseButton.read();
-  upButton.read();
-  downButton.read();
-#ifdef FIVEBUTTONS
-  buttonFour.read();
-  buttonFive.read();
-#endif
-}
 
 void volumeUpButton()
 {
@@ -920,49 +878,54 @@ void loop()
       activeModifier->loop();
     }
 
-    // Buttons werden nun über JS_Button gehandelt, dadurch kann jede Taste
-    // doppelt belegt werden
-    readButtons();
+    buttons.loop();
 
     // admin menu
-    if ((pauseButton.pressedFor(LONG_PRESS) || upButton.pressedFor(LONG_PRESS) || downButton.pressedFor(LONG_PRESS)) 
-        && pauseButton.isPressed() && upButton.isPressed() && downButton.isPressed())
+    if (buttons.getPauseState() == PRESSED 
+        && buttons.getUpState() == PRESSED
+        && buttons.getDownState() == PRESSED
+        && (buttons.getPauseState() == PRESSED_LONG_EVENT
+            || buttons.getUpState() == PRESSED_LONG_EVENT
+            || buttons.getDownState() == PRESSED_LONG_EVENT))
     {
       player.pause();
-      do
+
+      while (buttons.getPauseState() != RELEASED 
+        || buttons.getUpState() != RELEASED
+        || buttons.getDownState() != RELEASED)
       {
-        readButtons();
-      } while (pauseButton.isPressed() || upButton.isPressed() || downButton.isPressed());
+        buttons.loop();
+      }
 
       adminMenu();
       break;
     }
 
-    if (pauseButton.wasReleased())
+    if (buttons.getPauseState() == RELEASED_AFTER_SHORT_PRESS_EVENT)
     {
-      if (activeModifier != NULL)
-        if (activeModifier->handlePause() == true)
-          return;
-      if (!ignorePauseButton)
+      if ((activeModifier != NULL) && activeModifier->handlePause())
       {
-        if (player.isPlaying())
-        {
-          player.pause();
-          standby.start(mySettings.standbyTimer * 60 * 1000);
-        }
-        else if (knownCard)
-        {
-          player.start();
-          standby.stop();
-        }
+        return;
       }
-      ignorePauseButton = false;
+
+      if (player.isPlaying())
+      {
+        player.pause();
+        standby.start(mySettings.standbyTimer * 60 * 1000);
+      }
+      else if (knownCard)
+      {
+        player.start();
+        standby.stop();
+      }
     }
-    else if (pauseButton.pressedFor(LONG_PRESS) && !ignorePauseButton)
+    else if (buttons.getPauseState() == PRESSED_LONG_EVENT)
     {
-      if (activeModifier != NULL)
-        if (activeModifier->handlePause())
-          return;
+      if ((activeModifier != NULL) && activeModifier->handlePause())
+      {
+        return;
+      }
+
       if (player.isPlaying())
       {
         uint8_t advertTrack;
@@ -974,95 +937,22 @@ void loop()
         {
           advertTrack = currentTrack;
         }
+
         // Spezialmodus Von-Bis für Album und Party gibt die Dateinummer relativ zur Startposition wieder
         if (myFolder->mode == 8 || myFolder->mode == 9)
         {
           advertTrack = advertTrack - myFolder->special + 1;
         }
+
         player.playAdvertisement(advertTrack);
       }
       else
       {
         playShortCut(0);
       }
-      ignorePauseButton = true;
     }
 
-    if (upButton.pressedFor(LONG_PRESS) && !ignoreUpButton)
-    {
-#ifndef FIVEBUTTONS
-      if (player.isPlaying())
-      {
-        if (!mySettings.invertVolumeButtons)
-        {
-          volumeUpButton();
-        }
-        else
-        {
-          nextButton();
-        }
-      }
-      else
-      {
-        playShortCut(1);
-      }
-      ignoreUpButton = true;
-#endif
-    }
-    else if (upButton.wasReleased())
-    {
-      if (!ignoreUpButton)
-      {
-        if (!mySettings.invertVolumeButtons)
-        {
-          nextButton();
-        }
-        else
-        {
-          volumeUpButton();
-        }
-      }
-      ignoreUpButton = false;
-    }
-
-    if (downButton.pressedFor(LONG_PRESS) && !ignoreDownButton)
-    {
-#ifndef FIVEBUTTONS
-      if (player.isPlaying())
-      {
-        if (!mySettings.invertVolumeButtons)
-        {
-          volumeDownButton();
-        }
-        else
-        {
-          previousButton();
-        }
-      }
-      else
-      {
-        playShortCut(2);
-      }
-      ignoreDownButton = true;
-#endif
-    }
-    else if (downButton.wasReleased())
-    {
-      if (!ignoreDownButton)
-      {
-        if (!mySettings.invertVolumeButtons)
-        {
-          previousButton();
-        }
-        else
-        {
-          volumeDownButton();
-        }
-      }
-      ignoreDownButton = false;
-    }
-#ifdef FIVEBUTTONS
-    if (buttonFour.wasReleased())
+    if (buttons.getUpState() == PRESSED_LONG_EVENT)
     {
       if (player.isPlaying())
       {
@@ -1080,7 +970,19 @@ void loop()
         playShortCut(1);
       }
     }
-    if (buttonFive.wasReleased())
+    else if (buttons.getUpState() == RELEASED_AFTER_SHORT_PRESS_EVENT)
+    {
+      if (!mySettings.invertVolumeButtons)
+      {
+        nextButton();
+      }
+      else
+      {
+        volumeUpButton();
+      }
+    }
+
+    if (buttons.getDownState() == PRESSED_LONG_EVENT)
     {
       if (player.isPlaying())
       {
@@ -1098,7 +1000,18 @@ void loop()
         playShortCut(2);
       }
     }
-#endif
+    else if (buttons.getDownState() == RELEASED_AFTER_SHORT_PRESS_EVENT)
+    {
+      if (!mySettings.invertVolumeButtons)
+      {
+        previousButton();
+      }
+      else
+      {
+        volumeDownButton();
+      }
+    }
+
     // Ende der Buttons
   } while (!mfrc522.PICC_IsNewCardPresent());
 
@@ -1255,8 +1168,8 @@ void adminMenu(bool fromCard)
       player.playNotification(TRACK_PLACE_CARD);
       do
       {
-        readButtons();
-        if (upButton.wasReleased() || downButton.wasReleased())
+        buttons.loop();
+        if (buttons.getUpState() == RELEASED_AFTER_SHORT_PRESS_EVENT || buttons.getDownState() == RELEASED_AFTER_SHORT_PRESS_EVENT)
         {
           Serial.println(F("Abgebrochen!"));
           player.playNotification(TRACK_CANCELLED);
@@ -1329,8 +1242,8 @@ void adminMenu(bool fromCard)
       Serial.println(F(" Karte auflegen"));
       do
       {
-        readButtons();
-        if (upButton.wasReleased() || downButton.wasReleased())
+        buttons.loop();
+        if (buttons.getUpState() == RELEASED_AFTER_SHORT_PRESS_EVENT || buttons.getDownState() == RELEASED_AFTER_SHORT_PRESS_EVENT)
         {
           Serial.println(F("Abgebrochen!"));
           player.playNotification(TRACK_CANCELLED);
@@ -1402,23 +1315,24 @@ bool askCode(uint8_t *code, size_t digit)
   size_t x = 0u;
   while (x < digit)
   {
-    readButtons();
-    if (pauseButton.pressedFor(LONG_PRESS))
+    buttons.loop();
+    
+    if (buttons.getPauseState() == PRESSED_LONG_EVENT)
     {
       return false;
     }
 
-    if (pauseButton.wasReleased())
+    if (buttons.getPauseState() == RELEASED_AFTER_SHORT_PRESS_EVENT)
     {
       code[x++] = 1u;
     }
 
-    if (upButton.wasReleased())
+    if (buttons.getUpState() == RELEASED_AFTER_SHORT_PRESS_EVENT)
     {
       code[x++] = 2u;
     }
 
-    if (downButton.wasReleased())
+    if (buttons.getDownState() == RELEASED_AFTER_SHORT_PRESS_EVENT)
     {
       code[x++] = 3u;
     }
@@ -1450,19 +1364,18 @@ uint8_t voiceMenu(uint8_t numberOfOptions, uint16_t startMessage, uint16_t messa
       }
     }
 
-    readButtons();
+    buttons.loop();
     player.loop();
 
-    if (pauseButton.pressedFor(LONG_PRESS))
+    if (buttons.getPauseState() == PRESSED_LONG_EVENT)
     {
       Log.notice(F("Voice menu cancelled - returning %u" CR), defaultValue);
       player.playNotification(TRACK_CANCELLED);
-      ignorePauseButton = true;
       standby.loop();
       return defaultValue;
     }
 
-    if (pauseButton.wasReleased())
+    if (buttons.getPauseState() == RELEASED_AFTER_SHORT_PRESS_EVENT)
     {
       if (returnValue != 0u)
       {
@@ -1475,42 +1388,26 @@ uint8_t voiceMenu(uint8_t numberOfOptions, uint16_t startMessage, uint16_t messa
 
     bool newReturnValue = false;
 
-    if (upButton.pressedFor(LONG_PRESS))
+    if (buttons.getUpState() == PRESSED_LONG_EVENT)
     {
       returnValue = min(returnValue + 10u, numberOfOptions);
       newReturnValue = true;
-      ignoreUpButton = true;
     }
-    else if (upButton.wasReleased())
+    else if (buttons.getUpState() == RELEASED_AFTER_SHORT_PRESS_EVENT)
     {
-      if (!ignoreUpButton)
-      {
-        returnValue = min(returnValue + 1u, numberOfOptions);
-        newReturnValue = true;
-      }
-      else
-      {
-        ignoreUpButton = false;
-      }
+      returnValue = min(returnValue + 1u, numberOfOptions);
+      newReturnValue = true;
     }
 
-    if (downButton.pressedFor(LONG_PRESS))
+    if (buttons.getDownState() == PRESSED_LONG_EVENT)
     {
       returnValue = returnValue > 10u ? returnValue - 10u : 1u;
       newReturnValue = true;
-      ignoreDownButton = true;
     }
-    else if (downButton.wasReleased())
+    else if (buttons.getDownState() == RELEASED_AFTER_SHORT_PRESS_EVENT)
     {
-      if (!ignoreDownButton)
-      {
-        returnValue = returnValue > 1u ? returnValue - 1u : 1u;
-        newReturnValue = true;
-      }
-      else
-      {
-        ignoreDownButton = false;
-      }
+      returnValue = returnValue > 1u ? returnValue - 1u : 1u;
+      newReturnValue = true;
     }
 
     if (newReturnValue) {
@@ -1540,11 +1437,10 @@ void resetCard()
   player.playNotification(TRACK_PLACE_CARD);
   do
   {
-    pauseButton.read();
-    upButton.read();
-    downButton.read();
+    buttons.loop();
 
-    if (upButton.wasReleased() || downButton.wasReleased())
+    if (buttons.getUpState() == RELEASED_AFTER_SHORT_PRESS_EVENT
+        || buttons.getDownState() == RELEASED_AFTER_SHORT_PRESS_EVENT)
     {
       Serial.print(F("Abgebrochen!"));
       player.playNotification(TRACK_CANCELLED);
